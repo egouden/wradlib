@@ -19,7 +19,9 @@ __doc__ = __doc__.format('\n   '.join(__all__))
 
 import numpy as np
 from scipy import ndimage
+import xarray as xr
 
+import wradlib as wrl
 from wradlib import dp, util
 
 
@@ -602,6 +604,68 @@ def filter_window_distance(img, rscale, fsize=1500, tr1=7):
     similar = similar / count
     return similar
 
+
+def static_clutter_level(ts, minval=0, maxval=255, wet=0.3, nodata=np.nan, check_csr=True):
+    """
+    Detect static signal level from a time series.
+
+    Parameters
+    ----------
+    ts : array_like
+        timeseries to find static signal
+
+    Returns
+    -------
+    maxlevel : float
+        maximum clutter level
+    resolution : 
+        resolution of the clutter signal
+    """
+    ts = ts.ravel()
+
+    if check_csr:
+        nmin = np.sum(ts == minval)
+        if nmin > 0.95*len(ts):
+            return(nodata, nodata)
+
+    valid = (ts != nodata)
+    if np.sum(valid) < 20:
+        return(nodata, nodata)
+
+    ts = ts[valid]
+
+    resolution = 1
+    maxlevel = None
+
+    while maxlevel is None:
+        bins = np.arange(minval, maxval + resolution, resolution)
+        if len(bins) < 2:
+            return(nodata, nodata)
+        count, bins = np.histogram(ts, bins)
+        prob = count/ts.size
+        index = np.argmax(prob)
+        if prob[index] > wet:
+            maxlevel = bins[index+1]
+        resolution = resolution * 2
+
+    return(maxlevel, resolution)
+
+
+def static_clutter_map(sweep):
+    kwargs = {}
+    try:
+        kwargs["nodata"] = sweep.attrs["_FillValue"]
+    except:
+        pass
+    level, resolution = xr.apply_ufunc(static_clutter_level, sweep, kwargs=kwargs, vectorize=True,
+                                       input_core_dims=[['time']],output_core_dims=[[],[]],
+                                       keep_attrs=True, dask='allowed')
+
+    result = level.to_dataset(name="static_clutter_level")
+    result = result.assign({"static_clutter_resolution":resolution})
+    result["static_clutter_resolution"].attrs['add_offset'] = 0
+
+    return(result)
 
 if __name__ == '__main__':
     print('wradlib: Calling module <clutter> as main...')

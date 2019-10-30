@@ -6,7 +6,9 @@
 import unittest
 
 import numpy as np
+import xarray
 
+import wradlib as wrl
 from wradlib import clutter, georef, io, ipol, util
 
 
@@ -150,6 +152,47 @@ class FilterCloudtypeTest(unittest.TestCase):
         clutter.filter_cloudtype(self.val, self.val_sat,
                                  scale=self.rscale, smoothing=self.error)
 
+
+class StaticClutterTest(unittest.TestCase):
+
+    def setUp(self):
+        nsamples = 24 * 31
+        self.clutter1 = 10 * np.ones(nsamples) + np.random.uniform(-1.9, 1.9, nsamples)
+        self.clutter2 = 20 * np.ones(nsamples) + np.random.uniform(-0.2, 0.2, nsamples)
+        rainy = np.random.uniform(0, 100, nsamples) > 80
+        rainval = np.random.uniform(0, 60, nsamples)
+        self.rain = rainy * rainval
+
+    def test_static_clutter_level(self):
+
+        signal1 = np.maximum(self.clutter1, self.rain)
+        signal2 = np.maximum(self.clutter2, self.rain)
+        level = clutter.static_clutter_level(self.rain)
+        self.assertTrue(level == 1)
+        np.testing.assert_array_almost_equal(level, 1, decimal=1)
+
+        level = clutter.static_clutter_level(signal1)
+        self.assertTrue(level == 12)
+
+        level = clutter.static_clutter_level(signal2, resolution=0.5)
+        self.assertTrue(level == 20.5)
+
+    def test_static_clutter_map(self):
+        import glob, os
+        
+        files = 'hdf5/*dbzh*ess*'
+        #files = 'hdf5/*PA*'
+        files = 'hdf5/bewid/20190901*dBZ.vol.h5'
+        wrl_path = util.get_wradlib_data_path()
+        files = os.path.join(wrl_path, files)
+        files = glob.glob(files)
+        files = files[0:10]
+        scan = wrl.io.xarray.OdimH5(files, standard="cf")
+        for name in scan:
+            print(name)
+            sweep = scan[name]
+            var = sweep["DBZH"]
+            level = clutter.static_clutter_map(var)
 
 if __name__ == '__main__':
     unittest.main()
