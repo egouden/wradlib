@@ -481,6 +481,37 @@ def _weight_array(data, weight):
     return w_array
 
 
+def filter_precip_cloud(img, coord, satfile, maxprob=0, mindist=None):
+    """Identification of non-meteorological echoes based on
+        precipitation likelyhood from MSG.
+
+    Parameters
+    ----------
+    img : array_like
+        Radar image to which the filter is to be applied
+    satfile : string
+        MSG file with SAFNWC PC product
+    maxprob : float
+        Maximum probability to consider pixel as clutter
+    mindist : float
+        Minimal distance to consider pixel as cluter
+
+    Returns
+    -------
+    output : array_like
+        a boolean array containing TRUE where clutter has been identified.
+
+    """
+
+    satds = satfile.read_safnwc(satfile)
+    val, coord, proj = georef.raster.extract_raster_dataset(satds)
+    noprecip = pl <= prob
+    if smoothing is not None:
+        noprecip = getattr(wradlib.util,"filter_window_%s" %(grid))(noprecip,smoothing,"minimum",scale)
+    clutter = noprecip & (img > thrs)
+    return(clutter)
+
+
 def filter_cloudtype(img, cloud, thrs=0, snow=False, low=False, cirrus=False,
                      smoothing=None, grid="polar", scale=None):
     """Identification of non-meteorological echoes based on cloud type.
