@@ -19,7 +19,9 @@ __doc__ = __doc__.format('\n   '.join(__all__))
 
 import numpy as np
 from scipy import ndimage
+import xarray as xr
 
+import wradlib as wrl
 from wradlib import dp, util
 
 
@@ -602,6 +604,137 @@ def filter_window_distance(img, rscale, fsize=1500, tr1=7):
     similar = similar / count
     return similar
 
+
+def fix_csr(dbzh, th, minval=None, csr=None, restore=False, debug=False):
+    """
+    Restore values zeroed by hardware clutter filter using Clutter to Signal Ratio (CSR).
+
+    """
+    if minval is None:
+        minval = np.nanmin(dbzh)
+    
+    bad = dbzh > th
+    
+    filtered = th - dbzh
+
+    if csr is None:
+        positive = dbzh > minval
+        good = positive & ~bad
+        icsr = np.argmax(filtered[good])
+        csr = filtered[good][icsr]
+
+    withcsr = (dbzh == minval) & (filtered > csr)
+
+    dbzh = dbzh.copy()
+    dbzh[withcsr] = th[withcsr] - csr
+
+    if debug:
+ 
+        print("minval")
+        print(minval)
+        #print(np.where(strange))
+        #print(th[strange])
+        #print(dbzh[strange])
+        print("find csr")
+        print(th[good][icsr])
+        print(dbzh[good][icsr])
+        print(csr)
+        print(np.unravel_index(icsr, filtered.shape))
+
+        print("find bad")
+        imin = np.nanargmin(filtered)
+        print(th.ravel()[imin])
+        print(dbzh.ravel()[imin])
+        print(np.unravel_index(imin, filtered.shape))
+
+    return dbzh
+
+
+def static_clutter_level(ts, raw=None, resolution=1, tres=0.5, width=False, csr=None):
+    """
+    Detect the maximum static clutter signal level.
+
+    Parameters
+    ----------
+    ts : array_like
+        timeseries to find static signal
+    threshold : float
+        minimum probability to detect static clutter
+
+    Returns
+    -------
+    maxlevel : float
+        maximum clutter level
+    resolution : 
+        resolution of the clutter signal
+    """
+
+    if raw is not None:
+        ts = fix_csr(ts, raw, csr=csr)
+
+    ts = np.sort(ts)
+    minval = np.floor(ts.min())
+    maxval = np.ceil(ts.max())
+    if np.isnan(minval) or minval == maxval:
+        if width:
+            return(maxval,0)
+        else:
+            return maxval
+    maxprob = 0
+    while maxprob < tres:
+        bins = np.arange(minval, maxval + resolution, resolution)
+        count, bins = np.histogram(ts, bins=bins)
+        prob = count/ts.size
+        imax = np.argmax(prob)
+        maxprob = prob[imax]
+        resolution = resolution * 2
+        
+    maxlevel = bins[imax+1]
+
+    if width:
+        width = bins[1] - bins[0]
+        return(maxlevel, width)
+
+    return maxlevel
+
+
+def static_clutter_map(sweep, var="DBZH", csr=None, width=True):
+
+    var = sweep[var]
+    args = [var]
+    kwargs = {}
+    kwargs["width"] = width
+
+    if csr is None:
+        icd=[['time']]
+    else:
+        icd=[['time'],['time']]
+        args.append(sweep["TH"])
+        kwargs["csr"] = csr
+
+    if width:
+        ocd = [[],[]]
+    else:
+        ocd = [[]]
+
+    output = xr.apply_ufunc(static_clutter_level,
+                            *args,
+                            kwargs=kwargs,
+                            vectorize=True,
+                            input_core_dims=icd,
+                            output_core_dims=ocd,
+                            keep_attrs=True,
+                            dask='allowed'
+                            )
+
+    level = output[0]
+    result = level.to_dataset(name="static_clutter_level")
+    if width:
+        width = output[1]
+        result = result.assign({"static_clutter_width":width})
+        result["static_clutter_width"].attrs['add_offset'] = 0
+
+    return(result)
 
 if __name__ == '__main__':
     print('wradlib: Calling module <clutter> as main...')
