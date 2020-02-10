@@ -2707,7 +2707,9 @@ class OdimH5(XRadVol):
                              'prt_mode': 'fixed',
                              'fixed_angle': fixed_angle})
             if 'cf-full' in standard:
+                print(nch)
                 full_vars = _get_odim_full_vars(nch, ds_grps)
+                print(full_vars)
                 vars.update(full_vars)
 
             # assign variables and coordinates
@@ -3281,7 +3283,8 @@ def _get_odim_full_vars(nch, grps):
         full cf-variables
     """
     full_vars = collections.OrderedDict()
-    if nch.flavour == 'ODIM':
+    print(grps["how"])
+    if grps["how"] and nch.flavour == 'ODIM':
         for k, v in cf_full_vars.items():
             full_vars[k] = getattr(getattr(grps['how'],
                                            nch.flavour.lower()), k)

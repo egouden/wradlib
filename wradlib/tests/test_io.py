@@ -1087,6 +1087,18 @@ class XarrayTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             cf = io.xarray.OdimH5(h5file, flavour='None')
 
+    def test_read_odim_full_metadata(self):
+        filename = 'hdf5/knmi_polar_volume.h5'
+        h5file = util.get_wradlib_data_file(filename)
+        cf = io.xarray.OdimH5(h5file, standard='cf-full')
+        print(cf["sweep_1"])
+        print(cf.root.attrs)
+
+        filename = 'hdf5/behel.pvol.hdf'
+        h5file = util.get_wradlib_data_file(filename)
+        cf = io.xarray.OdimH5(h5file, standard='cf-full')
+
+
     def test_read_gamic(self):
         time_cov = ('2014-08-10T18:23:35Z', '2014-08-10T18:24:05Z')
         filename = 'hdf5/2014-08-10--182000.ppi.mvol'
