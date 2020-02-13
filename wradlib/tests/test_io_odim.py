@@ -9,7 +9,7 @@ import xarray as xr
 import h5py
 
 from wradlib import io, util
-
+import wradlib as wrl
 
 def create_a1gate(i):
     return i + 20
@@ -871,3 +871,35 @@ class TestSyntheticGamicVolume01(SyntheticDataVolume):
 
     dsdesc = 'scan{}'
     mdesc = 'moment_{}'
+
+
+def base_odim_data_double_th():
+    data = base_odim_data_02()
+    dataset = ['dataset1', 'dataset2']
+    for i, grp in enumerate(dataset):
+        sub = data[grp]
+        sub['data1']['what']['attrs']['quantity'] = "TH"
+        sub['how']['attrs']['startazA'][10] = sub['how']['attrs']['startazA'][9]
+        sub['how']['attrs']['stopazA'][10] = sub['how']['attrs']['stopazA'][9]
+    return data
+
+
+def create_test_file(name, data):
+    import tempfile
+    tmp_local = tempfile.NamedTemporaryFile(suffix='h5', prefix=name).name
+    with h5py.File(str(tmp_local), 'w') as f:
+        write_group(f, data)
+
+    return tmp_local
+
+
+class TestNotOdimCompliant():
+
+    def test_double_rays(self):
+
+        dbzh = base_odim_data_01()
+        dbzh = create_test_file("dbzh", dbzh)
+        th = base_odim_data_double_th()
+        th = create_test_file("th", th)
+        pvol = wrl.io.xarray.open_odim([dbzh,th],parallel=False)
+        sweep = pvol[0].data

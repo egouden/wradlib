@@ -767,6 +767,12 @@ def _preprocess_moment(ds, mom):
                     dims[0]: 'azimuth',
                     dims[1]: 'range'})
 
+    if mom.parent.decode_coords:
+        coords = mom.parent._get_coords().coords
+        ds = ds.assign_coords(coords)
+        ds = ds.sortby('azimuth')
+        ds = ds.pipe(_reindex_azimuth, mom.parent)
+
     return ds
 
 
