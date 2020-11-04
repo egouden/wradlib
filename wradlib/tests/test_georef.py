@@ -1309,3 +1309,45 @@ class TestXarray:
         src_da.drop(["x", "y", "z", "gr", "rays", "bins"])
         da = georef.georeference_dataset(src_da)
         xr.testing.assert_equal(self.da, da)
+
+
+class TestSweep()
+    def setUp(self):
+
+        self.sitecoords = [5.5, 50, 800]
+        rscale = 5E3
+        ascale = 10
+        self.ranges = np.arange(rscale/2, 250e3, rscale)
+        self.azimuths = np.arange(ascale/2, 360, ascale)
+        self.elangle = 1.
+
+    def test_bin_gcz(self):
+        elangle = self.elangle
+        ranges = self.ranges
+        height = self.sitecoords[2]
+
+        rsite = georef.get_earth_radius(self.sitecoords[1])
+
+        print("\nmaster:")
+        altitude = georef.bin_altitude(ranges, elangle, height, rsite)
+        distance = georef.bin_distance(ranges, elangle, height, rsite)
+        print((distance, altitude))
+
+        print("\nbasic:")
+        print(georef.bin_gcz(height, elangle, ranges, rsite))
+
+        print("\ndoviak:")
+        print(georef.bin_gcz_doviak(height, elangle, ranges, rsite))
+
+        print("\nother:")
+        print(georef.bin_gcz_other(height, elangle, ranges, rsite))
+
+        print("\nfull:")
+        print(georef.bin_gcz_full(height, elangle, ranges, rsite))
+
+        print("\nbasic with 100 meter geoid bias:")
+        print(georef.bin_gcz(height+100, elangle, ranges, rsite))
+
+        print("\nbasic at 4000 meter:")
+        print(georef.bin_gcz(4000, elangle, ranges, rsite))
+
