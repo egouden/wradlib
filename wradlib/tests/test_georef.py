@@ -1621,3 +1621,17 @@ def test_georeference_dataset(xr_data):
     src_da.drop_vars(["x", "y", "z", "gr", "rays", "bins"])
     da = georef.georeference(src_da)
     xr.testing.assert_equal(xr_data, da)
+
+
+def test_create_raster_xarray():
+    bounds = (150000, 170000, 151000, 171000)  # 1000m x 1000m
+    res = 10  # 10m resolution
+    crs = "EPSG:31370"
+    data = np.ones((100, 100), dtype=np.uint8)
+    vars = {"band1": data}
+
+    ds = create_raster_xarray(bounds, res, crs, vars)
+
+    assert ds.rio.crs.to_epsg() == 31370
+    assert ds["band1"].shape == (100, 100)
+    assert np.all(ds["band1"].values == 1)

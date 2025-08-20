@@ -18,14 +18,15 @@ Provide surface/terrain elevation information from SRTM data
 __all__ = ["download_srtm", "get_srtm", "get_srtm_tile_names"]
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+
 import os
+import zipfile
 
-import numpy as np
 
-from wradlib import util
-
-gdal = util.import_optional("osgeo.gdal")
-requests = util.import_optional("requests")
+import numpy
+import rioxarray
+import wradlib.util
+requests = wradlib.util.import_optional("requests")
 
 
 def init_header_redirect_session(token=None):
@@ -119,15 +120,15 @@ def get_srtm_tile_names(extent):
     Parameters
     ----------
     extent : list
-        list containing lonmin, lonmax, latmin, latmax
+        list containing lonmin, latmin, lonmax, latmax
 
     Returns
     -------
     out : list
         list of tile names
     """
-    extent = [int(np.floor(x)) for x in extent]
-    lonmin, lonmax, latmin, latmax = extent
+    extent = [int(numpy.floor(x)) for x in extent]
+    lonmin, latmin, lonmax, latmax = extent
 
     filelist = []
     for latitude in range(latmin, min(latmax, 0)):
@@ -154,7 +155,7 @@ def get_srtm(extent, *, resolution=3, merge=True, session=None):
     Parameters
     ----------
     extent : list
-        list containing lonmin, lonmax, latmin, latmax
+        list containing lonmin, latmin, lonmax, latmax
     resolution : int
         resolution of SRTM data (1, 3 or 30)
     merge : bool
@@ -164,12 +165,12 @@ def get_srtm(extent, *, resolution=3, merge=True, session=None):
 
     Returns
     -------
-    dataset : :py:class:`gdal:osgeo.gdal.Dataset`
-        gdal.Dataset Raster dataset containing elevation information
+    dem : :py:class:`rioxarray.DataArray`
+        Merged SRTM elevation data as a georeferenced rioxarray.DataArray
     """
     filelist = get_srtm_tile_names(extent)
     filelist = [f"{f}.SRTMGL{resolution}.hgt.zip" for f in filelist]
-    wrl_data_path = util._get_wradlib_data_path()
+    wrl_data_path = wradlib.util._get_wradlib_data_path()
     srtm_path = os.path.join(wrl_data_path, "geo")
     if not os.path.exists(srtm_path):
         os.makedirs(srtm_path)
@@ -185,11 +186,19 @@ def get_srtm(extent, *, resolution=3, merge=True, session=None):
                 filename, path, resolution=resolution, session=session
             )
         if status_code == 0:
-            demlist.append(path)
+            # Unzip file to .hgt
+            with zipfile.ZipFile(path, 'r') as zip_ref:
+                hgt_name = zip_ref.namelist()[0]
+                hgt_path = os.path.join(srtm_path, hgt_name)
+                if not os.path.exists(hgt_path):
+                    zip_ref.extract(hgt_name, srtm_path)
+            demlist.append(hgt_path)
 
-    demlist = [gdal.Open(d) for d in demlist]
+    # Read all tiles as rioxarray DataArrays
+    arrays = [rioxarray.open_rasterio(d) for d in demlist]
     if not merge:
-        return demlist
-    dem = gdal.Warp("", demlist, format="MEM")
-
-    return dem
+        return arrays
+    # Merge tiles
+    from rioxarray.merge import merge_arrays
+    dem = merge_arrays(arrays)
+    return dem.squeeze()

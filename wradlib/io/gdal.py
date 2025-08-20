@@ -24,7 +24,11 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import os
 import tempfile
 
-import numpy as np
+import h5py
+import numpy
+import xarray
+import rioxarray
+
 
 from wradlib import georef
 from wradlib.util import import_optional
@@ -261,7 +265,7 @@ class VectorSource:
         self._mode = kwargs.get("mode", "numpy")
         self._src_crs = kwargs.get("src_crs", None)
         if data is not None:
-            if isinstance(data, (np.ndarray, list)):
+            if isinstance(data, (numpy.ndarray, list)):
                 self._ds = self._check_src(data)
             else:
                 self.load_vector(data, source=source)
@@ -389,7 +393,7 @@ class VectorSource:
             else:
                 poly = geom
                 sources.append(poly)
-        return np.array(sources, dtype=object)
+        return numpy.array(sources, dtype=object)
 
     def get_data_by_idx(self, idx, *, mode=None):
         """Returns DataSource geometries from given index
@@ -406,7 +410,7 @@ class VectorSource:
         if mode == "geo":
             if isinstance(idx, (list, slice)):
                 return self.geo.loc[idx]
-            elif np.isscalar(idx):
+            elif numpy.isscalar(idx):
                 return self.geo.iloc[idx]
             else:
                 return self.geo.loc[idx]
@@ -426,7 +430,7 @@ class VectorSource:
                     poly, geom.GetGeometryName().capitalize()
                 )
             sources.append(poly)
-        return np.array(sources, dtype=object)
+        return numpy.array(sources, dtype=object)
 
     def get_data_by_att(self, attr=None, value=None, mode=None):
         """Returns DataSource geometries filtered by given attribute/value
@@ -442,7 +446,7 @@ class VectorSource:
         """
         if mode is None:
             mode = self._mode
-        if np.isscalar(value):
+        if numpy.isscalar(value):
             sql = f"{attr}={value}"
         else:
             sql = f"{attr} in {tuple(value)}"
@@ -501,7 +505,7 @@ class VectorSource:
         ogr_src = gdal_create_dataset(
             "ESRI Shapefile", os.path.join("/vsimem", tmpfile), gdal_type=gdal.OF_VECTOR
         )
-        src = np.array(src)
+        src = numpy.array(src)
         if self._src_crs and self._src_crs:
             src = georef.reproject(src, src_crs=self._src_crs, trg_crs=self._trg_crs)
         # create memory datasource, layer and create features

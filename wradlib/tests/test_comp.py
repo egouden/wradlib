@@ -253,7 +253,6 @@ def test_compose():
     np.testing.assert_allclose(composite1, res1)
 
 
-@requires_gdal
 def test_sweep_to_raster():
 
     filename = "hdf5/IDR66_20141206_094829.vol.h5"

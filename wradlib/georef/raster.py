@@ -28,13 +28,20 @@ __all__ = [
     "set_coordinate_indexing",
     "raster_to_polyvert",
     "create_raster_geographic",
-    "create_raster_xarray",
+    "create_raster_xarray",    
+    "raster_values",
+    "raster_coordinates",
+    "raster_extract",
+    "raster_extent",
+    "raster_elevation",
 ]
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 
-import numpy as np
-import xarray as xr
+import numpy
+import rasterio.enums
+import affine
+import xarray
 
 import wradlib
 from wradlib import georef
@@ -245,6 +252,8 @@ def extract_raster_dataset(dataset, *, mode="center", nodata=None):
     projection = read_gdal_projection(dataset)
 
     return values, coords, projection
+
+
 
 
 def get_raster_extent(dataset, *, geo=False, window=True):
@@ -691,103 +700,295 @@ def raster_to_polyvert(dataset):
         A N-d array of polygon vertices with shape (..., 5, 2).
 
     """
-    rastercoords = read_gdal_coordinates(dataset, mode="edge")
+    rastercoords = get_coordinates(dataset, mode="edge")
 
     polyvert = georef.grid_to_polyvert(rastercoords)
 
     return polyvert
 
 
-def create_raster_xarray(crs, bounds, size):
-    """Create a georeferenced raster image using xarray model and gdal conventions.
+def create_raster_xarray(crs, bounds, res, vars=None):
+    """
+    Create a georeferenced xarray.Dataset from bounds and resolution,
+    with only spatial dimensions defined (no coordinate values),
+    optionally populated with 2D data variables.
 
     Parameters
     ----------
-    crs : :py:class:`gdal:osgeo.osr.SpatialReference`
-        coordinate reference system mapping geographic coordinates to x,y coordinates
-    bounds : tuple of floats
-        image bounds (x_min, x_max, y_min, y_max)
-    size : float or tuple of floats
-        (x,y) pixel size in meters (or degrees if crs is geographic)
+    crs : str or rasterio.crs.CRS
+        Coordinate Reference System identifier (e.g., 'EPSG:3857').    
+    bounds : tuple of float
+        (minx, miny, maxx, maxy) in target CRS units.
+    res : float or (float, float)
+        Pixel size in CRS units. If a single value is given, square pixels are assumed.
+    vars : dict, optional
+        Dictionary of variable names to 2D arrays with shape (height, width).
 
     Returns
     -------
-    raster : :class:`xarray:Dataarray`
-        raster image dataset
+    xr.Dataset
+        Dataset with 'y', 'x' dimensions (no coordinate values) and optional
+        data variables, georeferenced via .rio.
 
+    Raises
+    ------
+    ValueError
+        If bounds do not match resolution exactly.
+        If any variable shape does not match (height, width).
     """
+    minx, miny, maxx, maxy = bounds
 
-    xmin, xmax, ymin, ymax = bounds
+    if isinstance(res, (int, float)):
+        xres = yres = float(res)
+    else:
+        xres, yres = res
 
-    try:
-        xsize, ysize = size
-    except TypeError:
-        xsize, ysize = size, size
+    x_extent = maxx - minx
+    y_extent = maxy - miny
+    nx = x_extent / xres
+    ny = y_extent / yres
 
-    xmin = xmin - xmin % xsize
-    ymin = ymin - ymin % ysize
-    if xmax % xsize != 0:
-        xmax = xmax - xmax % xsize + xsize
-    if ymax % ysize != 0:
-        ymax = ymax - ymax % ysize + ysize
+    if not (nx.is_integer() and ny.is_integer()):
+        raise ValueError(f"Bounds do not match resolution exactly:\n  nx={nx}, ny={ny}")
 
-    geotransform = [xmin, xsize, 0, ymax, 0, -ysize]
-    geotransform = [str(r) for r in geotransform]
-    geotransform = " ".join(geotransform)
+    width = int(nx)
+    height = int(ny)
 
-    num = (xmax - xmin) / xsize + 1
-    x = np.linspace(xmin, xmax, num=int(num), endpoint=True)
-    num = (ymax - ymin) / ysize + 1
-    y = np.linspace(ymin, ymax, num=int(num), endpoint=True)
-    if x[-1] != xmax:
-        x = np.append(x, xmax)
-    if y[-1] != ymax:
-        y = np.append(y, ymax)
+    transform = affine.Affine(xres, 0, minx, 0, -yres, maxy)
 
-    y = np.flip(y)
+    # Create dataset with empty dimensions only
+    ds = xr.Dataset()
+    ds = ds.assign_coords({})  # no spatial coords
+    ds = ds.assign_dims({"y": height, "x": width})
+    ds = ds.rio.write_crs(crs).rio.write_transform(transform)
 
-    raster = xr.DataArray(dims=["x", "y"], coords={"x": x, "y": y})
+    # Add variables if provided
+    if vars:
+        for name, array in vars.items():
+            if array.shape != (height, width):
+                raise ValueError(
+                    f"Variable '{name}' has shape {array.shape}, expected ({height}, {width}) for ('y', 'x') dimensions"
+                )
+            ds[name] = (("y", "x"), array)
 
-    wkt = crs.ExportToWkt()
-    raster = raster.assign_coords({"spatial_ref": 0})
-    raster.spatial_ref.attrs["crs_wkt"] = wkt
-    raster.spatial_ref.attrs["GeoTransform"] = geotransform
-
-    return raster
+    return ds
 
 
-def create_raster_geographic(bounds, size, size_in_meters=False):
-    """Create a geographic raster.
+def create_raster_geographic(
+    bounds: tuple[int, int, int, int],
+    resolution: int | tuple[int, int],
+    resolution_unit: str = "meters",
+    vars: dict[str, np.ndarray] | None = None
+) -> "xarray.Dataset":
+    """
+    Create a geographic raster with exact locations.
 
     Parameters
     ----------
+    bounds : tuple[int, int, int, int]
+        Geographic extent in integer arcseconds:
+        (min_longitude_arcsec, max_longitude_arcsec,
+         min_latitude_arcsec, max_latitude_arcsec).
 
-    bounds : (lon_min, lon_max, lat_min, lat_max)
-        geographic bounds
-    size : int
-        pixel size in degrees
-    size_in_meters : bool
-        if True, size is in meters and geographic sizes are approximated to keep bounds fixed
+    resolution : int or tuple[int, int]
+        Size of a single grid cell in units given by `resolution_unit`.
+        - Single int: applied to both X (longitude) and Y (latitude).
+        - Tuple: interpreted as (res_x, res_y).
+
+    resolution_unit : {"meters", "arcseconds"}, default="meters"
+        Unit in which `resolution` is specified.
+        - "meters": converted to arcseconds and snapped to fit bounds exactly.
+        - "arcseconds": used directly.
+
+    vars : dict[str, numpy.ndarray], optional
+        Dictionary mapping layer name (string) to a NumPy array containing
+        the layer’s data. Arrays must match the raster grid’s shape.
 
     Returns
     -------
-    raster : :class:`xarray:Dataset`
-        raster image dataset
-
+    xarray.Dataset
+        Dataset with integer‑arcsecond WGS84 coordinates aligned
+        exactly to the specified bounds and resolution.
     """
-    crs = georef.get_earth_projection()
+    if resolution_unit not in ("meters", "arcseconds"):
+        raise ValueError(f"Unsupported resolution_unit: {resolution_unit}")
 
-    if size_in_meters:
-        xsize, ysize = georef.geographic_size(bounds, size)
-        xmin, xmax, ymin, ymax = bounds
-        lx = xmax - xmin
-        n = round(lx / xsize)
-        xsize = lx / n
-        ly = ymax - ymin
-        m = round(ly / ysize)
-        ysize = ly / m
-        size = (xsize, ysize)
+    if isinstance(resolution, int):
+        resolution = (resolution, resolution)
 
-    raster = georef.create_raster_xarray(crs, bounds, size)
+    if resolution_unit == "meters":
+        lat_mid_deg = (bounds[2] + bounds[3]) / 2 / 3600.0
+        res_x_arc = meters_to_arcseconds_lon(resolution[0], lat_mid_deg)
+        res_y_arc = meters_to_arcseconds_lat(resolution[1])
+        extent_x_arc = bounds[1] - bounds[0]
+        extent_y_arc = bounds[3] - bounds[2]
+        res_x_arc = snap_to_extent(extent_x_arc, res_x_arc)
+        res_y_arc = snap_to_extent(extent_y_arc, res_y_arc)
+        resolution = (int(round(res_x_arc)), int(round(res_y_arc)))
 
-    return raster
+    crs = georef.wgs84_arcseconds_crs()
+
+    dataset = create_raster_xarray(
+        bounds,
+        resolution,
+        crs,
+        vars
+    )
+    return dataset
+
+
+def raster_extract(
+    ds: xarray.Dataset,
+    *,
+    variable: str | None = None,
+    mode: str = "center",
+    nodata: float | None = None
+) -> tuple[numpy.ndarray, numpy.ndarray, str]:
+    """
+    Extract raster values, coordinates, and projection from a rioxarray Dataset.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Raster dataset loaded via rioxarray.
+    variable : str or None, optional
+        Name of the data variable to extract. If None, uses the first variable.
+    mode : str, optional
+        Pixel coordinate mode: 'center' or 'edge'.
+    nodata : float or None, optional
+        Value to treat as nodata. If specified, replaces matching values with NaN.
+
+    Returns
+    -------
+    tuple of numpy.ndarray, numpy.ndarray, str
+        - values : Array of shape (bands, rows, cols) or (rows, cols) if single band.
+        - coordinates : Array of shape (rows, cols, 2) or (rows+1, cols+1, 2) if mode == 'edge'.
+        - projection : CRS in WKT format.
+    """
+    if variable is None:
+        variable = list(ds.data_vars)[0]
+
+    values = raster_values(ds, variable, nodata=nodata)
+    coordinates = raster_coordinates(ds, variable, mode=mode)
+    projection = ds.rio.crs.to_wkt()
+
+    return values, coordinates, projection
+
+
+def raster_values(
+    ds: xarray.Dataset,
+    variable: str,
+    nodata: float | None = None
+) -> numpy.ndarray:
+    """Extract raster values from a Dataset variable, replacing nodata if specified."""
+    da = ds[variable]
+    if nodata is not None:
+        da = da.where(da != nodata, numpy.nan)
+    return da.values
+
+
+def raster_coordinates(
+    ds: xarray.Dataset,
+    variable: str,
+    mode: str = "center"
+) -> numpy.ndarray:
+    """Compute pixel coordinates from a Dataset variable."""
+    da = ds[variable]
+
+    if "x" not in da.coords or "y" not in da.coords:
+        da = da.rio.reproject(da.rio.crs)
+
+    x = da.x.values
+    y = da.y.values
+
+    if mode == "center":
+        xx, yy = numpy.meshgrid(x, y)
+    elif mode == "edge":
+        xx, yy = numpy.meshgrid(_compute_edges(x), _compute_edges(y))
+    else:
+        raise ValueError(f"Invalid mode '{mode}'. Expected 'center' or 'edge'.")
+
+    return numpy.stack([xx, yy], axis=-1)
+
+
+def _compute_edges(coords: numpy.ndarray) -> numpy.ndarray:
+    """Compute pixel edge coordinates from center coordinates."""
+    diffs = numpy.diff(coords) / 2
+    edges = numpy.empty(coords.size + 1)
+    edges[1:-1] = coords[:-1] + diffs
+    edges[0] = coords[0] - diffs[0]
+    edges[-1] = coords[-1] + diffs[-1]
+    return edges
+
+
+def raster_extent(
+    ds: xarray.Dataset,
+    *,
+    geo: bool = False
+) -> numpy.ndarray:
+    """
+    Compute the bounding box extent of a rioxarray Dataset,
+    correcting for pixel-center coordinates and optionally
+    reprojecting to geographic coordinates.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Raster dataset loaded via rioxarray.
+    geo : bool, optional
+        If True, reproject extent to geographic coordinates.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape (4,) with extent [xmin, ymin, xmax, ymax].
+    """
+    x = ds.x.values
+    y = ds.y.values
+
+    dx = numpy.abs(x[1] - x[0])
+    dy = numpy.abs(y[1] - y[0])
+
+    xmin = x.min() - dx / 2
+    xmax = x.max() + dx / 2
+    ymin = y.min() - dy / 2
+    ymax = y.max() + dy / 2
+
+    if geo:
+        xmin, ymin, xmax, ymax = ds.rio.transform_bounds(
+            dst_crs="EPSG:4326",
+            left=xmin,
+            bottom=ymin,
+            right=xmax,
+            top=ymax
+        )
+
+    extent = numpy.array([xmin, ymin, xmax, ymax], dtype=numpy.float64)
+    return extent
+
+
+def choose_rioxarray_resampling(ratio: float) -> rasterio.enums.Resampling:
+    if ratio > 2:
+        return rasterio.enums.Resampling.average
+    elif ratio < 0.5:
+        return rasterio.enums.Resampling.nearest
+    else:
+        return rasterio.enums.Resampling.bilinear
+
+
+def raster_elevation(
+    ds: xarray.Dataset,
+    **kwargs
+) -> xarray.Dataset:
+    extent = get_extent(ds, geo=True)
+    dem = wradlib.io.dem.get_srtm(extent, **kwargs)
+
+    dem_res = abs(dem.rio.resolution()[0])
+    ds_res = abs(ds.rio.resolution()[0])
+    ratio = ds_res / dem_res
+
+    resampling_method = choose_rioxarray_resampling(ratio)
+    dem = dem.rio.reproject_match(ds, resampling=resampling_method)
+
+    ds = ds.assign_coords(elevation=(("y", "x"), dem.values))
+    return ds

@@ -22,12 +22,14 @@ __all__ = [
     "from_hdf5",
     "read_gpm",
     "read_trmm",
+    "read_safnwc",
 ]
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
 import warnings
 
+import affine
 import numpy as np
 import xarray as xr
 from packaging.version import Version
@@ -859,3 +861,56 @@ def read_trmm(filename1, filename2, *, bbox=None):
     )
 
     return trmm_data
+
+
+def read_safnwc(filename):
+    """Read MSG SAFNWC HDF5 file into a rioxarray georeferenced xarray.Dataset.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the SAFNWC HDF5 file.
+
+    Returns
+    -------
+    dataset : xarray.Dataset
+        Georeferenced Dataset with CRS and transform.
+    """
+    with h5py.File(filename, "r") as file:
+        if "CT" not in file:
+            raise KeyError(f"'CT' dataset not found in {filename}")
+        ct_data = file["CT"][:]
+
+        attributes = {
+            key: (value.decode("utf-8") if isinstance(value, bytes) else value)
+            for key, value in file.attrs.items()
+        }
+        try:
+            transform_values = [
+                float(attributes["XGEO_UP_LEFT"]),
+                float(attributes["GEOTRANSFORM_GDAL_TABLE"].split(",")[1]),
+                0.0,
+                float(attributes["YGEO_UP_LEFT"]),
+                0.0,
+                float(attributes["GEOTRANSFORM_GDAL_TABLE"].split(",")[5])
+            ]
+            crs = attributes["PROJECTION"]
+        except KeyError as error:
+            raise OSError(f"Missing geospatial metadata in {filename}") from error
+
+    da = xr.DataArray(
+        ct_data,
+        dims=("y", "x"),
+        name = "CT"
+    )
+    
+    transform = affine.Affine.from_gdal(*transform_values)
+    da = (
+        da
+        .rio.write_transform(transform)
+        .rio.write_crs(crs)
+    )   
+    
+    dataset = da.to_dataset()
+
+    return dataset

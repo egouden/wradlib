@@ -351,14 +351,20 @@ def test_to_hdf5():
 
 
 @requires_gdal
-def test_read_safnwc():
+def test_read_safnwc_old():
     filename = "hdf5/SAFNWC_MSG3_CT___201304290415_BEL_________.h5"
     safnwcfile = get_wradlib_data_file(filename)
     io.gdal.read_safnwc(safnwcfile)
 
 
+def test_read_safnwc():
+    filename = "hdf5/SAFNWC_MSG3_CT___201304290415_BEL_________.h5"
+    safnwcfile = get_wradlib_data_file(filename)
+    io.hdf.read_safnwc(safnwcfile)
+
+
 @requires_netcdf
-@requires_gdal
+ 
 def test_read_gpm():
     filename1 = (
         "gpm/2A-CS-151E24S154E30S.GPM.Ku.V7-20170308.20141206-"
@@ -388,7 +394,7 @@ def test_read_gpm():
 
 @requires_h5py
 @requires_netcdf
-@requires_gdal
+ 
 def test_read_trmm():
     # define TRMM data sets
     trmm_2a23_file = get_wradlib_data_file(
@@ -1188,7 +1194,7 @@ def test_get_rb_file_as_string():
             io.rainbow.get_rb_file_as_string("rb_fh")
 
 
-@requires_gdal
+ 
 def test_gdal_create_dataset():
     testfunc = io.gdal.gdal_create_dataset
     tmp = tempfile.NamedTemporaryFile(mode="w+b").name
@@ -1210,7 +1216,7 @@ def test_gdal_create_dataset():
     )
 
 
-@requires_gdal
+ 
 def test_write_raster_dataset():
     filename = "geo/bonn_new.tif"
     geofile = get_wradlib_data_file(filename)
@@ -1221,14 +1227,14 @@ def test_write_raster_dataset():
         io.gdal.write_raster_dataset(geofile + "asc1", ds, driver="AIG")
 
 
-@requires_gdal
+ 
 def test_open_raster():
     filename = "geo/bonn_new.tif"
     geofile = get_wradlib_data_file(filename)
     io.gdal.open_raster(geofile, driver="GTiff")
 
 
-@requires_gdal
+ 
 def test_open_vector():
     get_wradlib_data_file("shapefiles/agger/agger_merge.dbf")
     get_wradlib_data_file("shapefiles/agger/agger_merge.shx")
@@ -1274,7 +1280,7 @@ def data_source():
 
 
 @requires_geos
-@requires_gdal
+ 
 def test__check_src():
     get_wradlib_data_file("shapefiles/freiberger_mulde/freiberger_mulde.dbf")
     get_wradlib_data_file("shapefiles/freiberger_mulde/freiberger_mulde.shx")
@@ -1289,7 +1295,7 @@ def test__check_src():
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_error():
     get_wradlib_data_file("shapefiles/agger/agger_merge.dbf")
     get_wradlib_data_file("shapefiles/agger/agger_merge.shx")
@@ -1301,20 +1307,20 @@ def test_error():
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_data(data_source):
     np.testing.assert_almost_equal(data_source.ds.data, data_source.data)
 
 
 @requires_geos
-@requires_gdal
+ 
 def test__get_data(data_source):
     ds = io.VectorSource(data_source.data)
     np.testing.assert_almost_equal(ds._get_data(), data_source.data)
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_get_data_by_idx(data_source):
     ds = io.VectorSource(data_source.data)
     np.testing.assert_almost_equal(ds.get_data_by_idx([0]), data_source.data[0:1])
@@ -1323,7 +1329,7 @@ def test_get_data_by_idx(data_source):
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_get_data_by_att(data_source):
     ds = io.VectorSource(data_source.data)
     np.testing.assert_almost_equal(
@@ -1335,7 +1341,7 @@ def test_get_data_by_att(data_source):
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_get_data_by_geom(data_source):
     ds = io.VectorSource(data_source.data)
     lyr = ds.ds.GetLayer()
@@ -1350,7 +1356,7 @@ def test_get_data_by_geom(data_source):
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_set_attribute(data_source):
     ds = io.VectorSource(data_source.data)
     ds.set_attribute("test", data_source.values1)
@@ -1360,7 +1366,7 @@ def test_set_attribute(data_source):
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_get_attributes(data_source):
     ds = io.VectorSource(data_source.data)
     ds.set_attribute("test", data_source.values2)
@@ -1369,7 +1375,7 @@ def test_get_attributes(data_source):
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_get_geom_properties():
     get_wradlib_data_file("shapefiles/freiberger_mulde/freiberger_mulde.dbf")
     get_wradlib_data_file("shapefiles/freiberger_mulde/freiberger_mulde.shx")
@@ -1386,14 +1392,14 @@ def test_get_geom_properties():
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_dump_vector(data_source):
     ds = io.VectorSource(data_source.data)
     ds.dump_vector(tempfile.NamedTemporaryFile(mode="w+b").name)
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_clean_up_temporary_files(data_source):
     ds = io.VectorSource(data_source.data)
     tempdir = ds.ds.GetDescription()
@@ -1403,7 +1409,7 @@ def test_clean_up_temporary_files(data_source):
 
 
 @requires_geos
-@requires_gdal
+ 
 def test_dump_raster():
     get_wradlib_data_file("shapefiles/freiberger_mulde/freiberger_mulde.dbf")
     get_wradlib_data_file("shapefiles/freiberger_mulde/freiberger_mulde.shx")
@@ -1542,35 +1548,66 @@ def test_get_srtm_tile_names():
         assert t == filelist
 
 
-@requires_secrets
-@requires_gdal
-@pytest.mark.xfail(strict=False)
 def test_get_srtm(mock_wradlib_data_env):
+    targets = ["N38W029.SRTMGL3.hgt.zip", "N38W028.SRTMGL3.hgt.zip", "N39W029.SRTMGL3.hgt.zip", "N39W028.SRTMGL3.hgt.zip"]
+
+    extent = [-28.5, -27.5, 38.5, 39.5]
+    datasets = io.dem.get_srtm(extent, merge=False)
+    # Use rioxarray's .rio._filepath (>=0.13) or .encoding.get('source') for file path
+    filelist = []
+    for d in datasets:
+        path = getattr(d.rio, '_filepath', None)
+        if path is None:
+            path = d.encoding.get('source', None)
+        if path is None:
+            raise RuntimeError('Could not determine source file path for SRTM tile')
+        filelist.append(os.path.basename(path))
+    assert targets == filelist
+
+    merged = io.dem.get_srtm(extent)
+
+    # rioxarray DataArray shape: (band, y, x)
+    xsize = (datasets[0].shape[-1] - 1) * 2 + 1
+    ysize = (datasets[0].shape[-2] - 1) * 2 + 1
+    assert merged.shape[-1] == xsize
+    assert merged.shape[-2] == ysize
+
+    # Check geotransform via rioxarray attributes
+    resolution = 3 / 3600
+    ulcx = -29 - resolution / 2
+    ulcy = 40 + resolution / 2
+    geo_ref = [ulcx, resolution, 0, ulcy, 0, -resolution]
+    # rioxarray stores transform as Affine in .rio.transform()
+    affine = merged.rio.transform()
+    geo = [affine.c, affine.a, affine.b, affine.f, affine.d, affine.e]
+    np.testing.assert_array_almost_equal(geo, geo_ref)
     targets = ["N38W029", "N38W028", "N39W029", "N39W028"]
     targets = [f"{f}.SRTMGL3.hgt.zip" for f in targets]
 
     extent = [-28.5, -27.5, 38.5, 39.5]
     datasets = io.dem.get_srtm(extent, merge=False)
-    filelist = [os.path.basename(d.GetFileList()[0]) for d in datasets]
+    filelist = [os.path.basename(d.encoding['rasterio']['filename']) for d in datasets]
     assert targets == filelist
 
     merged = io.dem.get_srtm(extent)
 
-    xsize = (datasets[0].RasterXSize - 1) * 2 + 1
-    ysize = (datasets[0].RasterXSize - 1) * 2 + 1
-    assert merged.RasterXSize == xsize
-    assert merged.RasterYSize == ysize
+    # rioxarray DataArray shape: (band, y, x)
+    xsize = (datasets[0].shape[-1] - 1) * 2 + 1
+    ysize = (datasets[0].shape[-2] - 1) * 2 + 1
+    assert merged.shape[-1] == xsize
+    assert merged.shape[-2] == ysize
 
-    geo = merged.GetGeoTransform()
+    # Check geotransform via rioxarray attributes
     resolution = 3 / 3600
     ulcx = -29 - resolution / 2
     ulcy = 40 + resolution / 2
     geo_ref = [ulcx, resolution, 0, ulcy, 0, -resolution]
+    # rioxarray stores transform as Affine in .rio.transform()
+    affine = merged.rio.transform()
+    geo = [affine.c, affine.a, affine.b, affine.f, affine.d, affine.e]
     np.testing.assert_array_almost_equal(geo, geo_ref)
 
 
-@requires_data_folder
-@requires_gdal
 def test_get_srtm_offline():
     targets = ["N38W029", "N38W028", "N39W029", "N39W028"]
     targets = [f"{f}.SRTMGL3.hgt.zip" for f in targets]

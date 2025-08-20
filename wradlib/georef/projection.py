@@ -695,3 +695,37 @@ class GeorefProjectionMethods:
             return reproject(self, *args, **kwargs)
         else:
             return reproject(self._obj, *args, **kwargs)
+
+
+def wgs84_arcseconds_crs() -> pyproj.CRS:
+    """
+    Return a pyproj.CRS for WGS84 with axis units in arcseconds.
+    This is equivalent to EPSG:4326 but with +units=arcsec.
+
+    Returns
+    -------
+    pyproj.CRS
+        CRS object with WGS84 datum and arcsecond angular units.
+    """
+    params = {
+        "proj": "longlat",
+        "datum": "WGS84",
+        "units": "arcsec",
+        "no_defs": None
+    }
+    return pyproj.CRS.from_dict(params)
+
+def meters_to_arcseconds_lat(m: float) -> float:
+    """Meters → arcseconds of latitude (float)."""
+    return (m / 111_320.0) * 3600.0
+
+
+def meters_to_arcseconds_lon(m: float, lat_deg: float) -> float:
+    """Meters → arcseconds of longitude at given latitude (float)."""
+    return (m / (111_320.0 * math.cos(math.radians(lat_deg)))) * 3600.0
+
+
+def snap_to_extent(extent_arcsec: int, target_arcsec: float) -> float:
+    """Adjust target_arcsec so extent / res is an integer."""
+    n = max(1, round(extent_arcsec / target_arcsec))
+    return extent_arcsec / n
